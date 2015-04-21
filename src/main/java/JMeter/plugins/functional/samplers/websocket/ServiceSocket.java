@@ -5,13 +5,16 @@
 package JMeter.plugins.functional.samplers.websocket;
 
 import java.io.IOException;
-import java.util.Deque;
 import java.util.Iterator;
-import java.util.LinkedList;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+
 import org.apache.log.Logger;
+
 import java.util.regex.Pattern;
+
 import org.apache.jmeter.engine.util.CompoundVariable;
 import org.apache.jorphan.logging.LoggingManager;
 import org.eclipse.jetty.websocket.api.Session;
@@ -32,7 +35,7 @@ public class ServiceSocket {
     protected final WebSocketSampler parent;
     protected WebSocketClient client;
     private static final Logger log = LoggingManager.getLoggerForClass();
-    protected Deque<String> responeBacklog = new LinkedList<String>();
+    protected Queue<String> responeBacklog = new ConcurrentLinkedQueue<String>();
     protected Integer error = 0;
     protected StringBuffer logMessage = new StringBuffer();
     protected CountDownLatch openLatch = new CountDownLatch(1);

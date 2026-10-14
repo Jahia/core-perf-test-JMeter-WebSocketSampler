@@ -9,6 +9,7 @@ import java.io.IOException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.config.Argument;
 import org.apache.jmeter.config.Arguments;
+import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.util.EncoderCache;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
@@ -25,8 +26,12 @@ import org.apache.log.Logger;
 
 
 import java.io.UnsupportedEncodingException;
+import java.net.HttpCookie;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -59,6 +64,9 @@ public class WebSocketSampler extends AbstractSampler implements TestStateListen
 
     private static ExecutorService executor = Executors.newCachedThreadPool();
 
+    // The HTTP Cookie Manager in scope of the sampler, its cookies are sent with the upgrade request
+    private transient CookieManager cookieManager;
+
     public WebSocketSampler() {
         super();
         setName("WebSocket sampler");
@@ -88,6 +96,10 @@ public class WebSocketSampler extends AbstractSampler implements TestStateListen
         //Start WebSocket client thread and upgrage HTTP connection
         webSocketClient.start();
         ClientUpgradeRequest request = new ClientUpgradeRequest();
+        // Like a browser, send the origin of the page and the cookies of the session, servers can refuse an upgrade
+        // request without them
+        request.setHeader("Origin", getOrigin(uri));
+        request.setCookies(getCookies(uri));
         webSocketClient.connect(socket, uri, request);
 
         //Get connection timeout or use the default value
@@ -102,6 +114,52 @@ public class WebSocketSampler extends AbstractSampler implements TestStateListen
         socket.awaitOpen(connectionTimeout, TimeUnit.MILLISECONDS);
 
         return socket;
+    }
+
+    /**
+     * @return the origin of the HTTP page opening the WebSocket connection: the same scheme, host and port
+     */
+    private static String getOrigin(URI uri) {
+        String scheme = "wss".equalsIgnoreCase(uri.getScheme()) ? "https" : "http";
+        return uri.getPort() == -1 ? scheme + "://" + uri.getHost() : scheme + "://" + uri.getHost() + ":" + uri.getPort();
+    }
+
+    /**
+     * @return the cookies the HTTP Cookie Manager in scope would send to the same URL over HTTP
+     */
+    private List<HttpCookie> getCookies(URI uri) throws Exception {
+        List<HttpCookie> cookies = new ArrayList<HttpCookie>();
+        if (cookieManager == null) {
+            return cookies;
+        }
+        URL url = new URI(getOrigin(uri) + uri.getRawPath()).toURL();
+        String cookieHeader = cookieManager.getCookieHeaderForURL(url);
+        if (cookieHeader != null) {
+            for (String cookie : cookieHeader.split(";")) {
+                int separator = cookie.indexOf('=');
+                if (separator > 0) {
+                    HttpCookie httpCookie = new HttpCookie(cookie.substring(0, separator).trim(), cookie.substring(separator + 1).trim());
+                    // A version 1 cookie is sent with a quoted value, which is not what the browser sends
+                    httpCookie.setVersion(0);
+                    cookies.add(httpCookie);
+                }
+            }
+        }
+        return cookies;
+    }
+
+    @Override
+    public void addTestElement(TestElement element) {
+        if (element instanceof CookieManager) {
+            cookieManager = (CookieManager) element;
+        } else {
+            super.addTestElement(element);
+        }
+    }
+
+    @Override
+    public void clearTestElementChildren() {
+        cookieManager = null;
     }
 
     @Override
